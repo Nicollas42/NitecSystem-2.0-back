@@ -4,6 +4,9 @@ use Illuminate\Http\Request; // <--- Importante para evitar Erro 500
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PasswordResetController;
+use App\Http\Controllers\ProdutoController;
+use App\Http\Controllers\EquipamentoController;
+use App\Http\Controllers\LojaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -34,4 +37,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+Route::get('/equipamentos', [EquipamentoController::class, 'index']);
+Route::post('/equipamentos', [EquipamentoController::class, 'store']);
+Route::get('/produtos', [ProdutoController::class, 'listar_produtos']);
+Route::post('/produtos', [ProdutoController::class, 'criar_produto']);
+Route::put('/produtos/{id}', [ProdutoController::class, 'atualizar_produto']);
+Route::get('/minhas-lojas', [LojaController::class, 'index']);
+Route::post('/verificar-senha', [AuthController::class, 'verificar_senha']);
+Route::put('/lojas/{id}', [LojaController::class, 'update']);
 });
