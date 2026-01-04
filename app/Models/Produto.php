@@ -9,31 +9,22 @@ class Produto extends Model
 {
     use HasFactory;
 
-    /**
-     * Tabela associada ao modelo.
-     *
-     * @var string
-     */
     protected $table = 'produtos';
 
-    /**
-     * Os atributos que podem ser atribuídos em massa.
-     *
-     * @var array
-     */
-    public $incrementing = false;
-    
+    // AQUI ESTÁ A CORREÇÃO: Adicionamos todos os campos novos
     protected $fillable = [
-        'id',
-        'tipo_item',
+        'empresa_id',
         'nome',
-        'grupo_familia',
-        'categoria',
         'codigo_barras',
         'unidade_medida',
+        'tipo_item',
+        'categoria',
+        'grupo_familia',
         'preco_custo',
-        'preco_venda',
-        'estoque_atual',
+        'preco_venda', // Preço Base (Capa)
+        // Note que estoque_atual não está aqui pois ele é gerenciado na outra tabela (estoque_lojas)
+        // mas se sua migration antiga ainda tiver essa coluna, pode deixar aqui pra evitar erro.
+        'estoque_atual', 
         'estoque_minimo'
     ];
 }

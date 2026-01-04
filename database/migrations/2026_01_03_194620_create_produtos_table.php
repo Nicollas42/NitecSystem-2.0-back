@@ -10,23 +10,26 @@ return new class extends Migration
     {
         Schema::create('produtos', function (Blueprint $table) {
             $table->id();
-            // Futuramente você pode descomentar a linha abaixo para vincular produto à empresa
-            // $table->foreignId('empresa_id')->constrained('empresas');
+            
+            // Vínculo com a empresa (Rede)
+            $table->foreignId('empresa_id')->constrained('empresas')->onDelete('cascade');
 
+            // Classificação
             $table->enum('tipo_item', ['REVENDA', 'INTERNO', 'INSUMOS'])->default('REVENDA');
             $table->string('nome');
             $table->string('codigo_barras')->nullable();
             $table->string('unidade_medida', 5)->default('UN');
             
-            // Organização
             $table->string('grupo_familia')->nullable();
             $table->string('categoria')->nullable();
             
-            // Valores e Estoque (Decimal com precisão para quantidades quebradas e valores)
+            // Preços de Referência (Capa / Sugerido)
+            // O preço real de venda fica na tabela estoque_lojas
             $table->decimal('preco_custo', 10, 2)->default(0);
             $table->decimal('preco_venda', 10, 2)->default(0);
-            $table->decimal('estoque_atual', 10, 3)->default(0);
-            $table->decimal('estoque_minimo', 10, 3)->default(5);
+            
+            // OBS: Removemos estoque_atual e estoque_minimo daqui
+            // pois agora eles são específicos por filial.
             
             $table->timestamps();
         });

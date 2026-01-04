@@ -45,4 +45,5 @@ Route::put('/produtos/{id}', [ProdutoController::class, 'atualizar_produto']);
 Route::get('/minhas-lojas', [LojaController::class, 'index']);
 Route::post('/verificar-senha', [AuthController::class, 'verificar_senha']);
 Route::put('/lojas/{id}', [LojaController::class, 'update']);
+Route::get('/estoque-geral', [ProdutoController::class, 'listar_estoque_geral']);
 });
