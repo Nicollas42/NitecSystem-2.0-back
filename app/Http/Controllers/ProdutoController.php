@@ -30,6 +30,7 @@ class ProdutoController extends Controller
                 'produtos.id',
                 'produtos.nome',
                 'produtos.codigo_barras',
+                'produtos.codigo_balanca',
                 'produtos.unidade_medida',
                 'produtos.tipo_item',
                 'produtos.categoria',
@@ -69,14 +70,13 @@ class ProdutoController extends Controller
                 'produtos.nome as produto_nome',
                 'produtos.categoria',
                 'produtos.codigo_barras',
+                'produtos.codigo_balanca',
+                'produtos.unidade_medida', 
                 'lojas.nome_fantasia as filial_nome',
                 'lojas.eh_matriz',
-                
                 'estoque_lojas.preco_venda',
                 'estoque_lojas.validade',
                 DB::raw('COALESCE(estoque_lojas.preco_custo, produtos.preco_custo) as preco_custo'),
-                
-                // SEPARAÇÃO
                 'estoque_lojas.quantidade as estoque_deposito',
                 'estoque_lojas.quantidade_vitrine as estoque_vitrine'
             )
@@ -123,7 +123,7 @@ class ProdutoController extends Controller
             DB::beginTransaction();
 
             // 1. DADOS GLOBAIS (CATÁLOGO)
-            $dadosGlobal = $request->only(['nome', 'codigo_barras', 'categoria', 'unidade_medida', 'grupo_familia', 'tipo_item']);
+            $dadosGlobal = $request->only(['nome', 'codigo_barras', 'codigo_balanca', 'categoria', 'unidade_medida', 'grupo_familia', 'tipo_item']);
             
             // Define valores padrão se vierem vazios
             if (!$request->categoria) $dadosGlobal['categoria'] = 'Outros';
