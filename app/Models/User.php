@@ -9,16 +9,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class User extends Authenticatable
 {
-    // 2. IMPORTANTE: Adicione 'HasApiTokens' dentro da classe
     use HasApiTokens, HasFactory, Notifiable;
 
-    protected $table = 'usuarios'; // Sua tabela personalizada
+    protected $table = 'usuarios';
 
     protected $fillable = [
+        'empresa_id', // <--- CAMPO NOVO IMPORTANTÍSSIMO
         'nome_completo',
         'email',
         'celular',
         'password',
+        'cpf'
     ];
 
     protected $hidden = [

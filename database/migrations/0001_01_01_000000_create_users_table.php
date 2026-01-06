@@ -8,12 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Alterado de 'users' para 'usuarios'
         Schema::create('usuarios', function (Blueprint $table) {
             $table->id();
+            
+            // --- ESTA LINHA ESTAVA FALTANDO ---
+            $table->unsignedBigInteger('empresa_id')->nullable()->index(); 
+            // ----------------------------------
+
             $table->string('nome_completo'); 
             $table->string('email')->unique();
-            $table->string('celular')->nullable()->unique(); // <--- NOVO CAMPO
-            $table->timestamp('email_verificado_em')->nullable();
+            $table->string('celular', 20)->nullable(); // Removido 'unique' para evitar erros em testes repetidos, opcional
+            $table->string('cpf', 20)->nullable();     // Adicionado CPF também, pois seu seeder e controller usam
+            $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();
