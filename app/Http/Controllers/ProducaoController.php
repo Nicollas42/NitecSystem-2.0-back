@@ -48,7 +48,30 @@ class ProducaoController extends Controller
 
             // 4. DEBITAR INGREDIENTES (Baixa de Estoque)
             foreach ($ingredientes as $ing) {
+                // Se for item de Estoque Infinito (Água, Energia), PULA a baixa ou apenas registra negativo sem travar
+                // Mas a lógica principal é: NÃO TRAVAR
+                
+                // Busca se é infinito
+                $produtoInfo = DB::table('produtos')->where('id', $ing->insumo_id)->first();
+                
                 $qtdNecessaria = $ing->qtd_usada * $fator;
+
+                // LÓGICA DA OPÇÃO B:
+                if ($produtoInfo->estoque_infinito) {
+                    // Se é infinito, a gente até pode debitar (vai ficar negativo, tipo -1000 Litros), 
+                    // mas NÃO VAMOS BLOQUEAR se faltar.
+                    // Ou melhor: nem fazemos a validação de saldo insuficiente.
+                } else {
+                    // LÓGICA PADRÃO (Trava se faltar)
+                    $estoqueAtual = DB::table('estoque_lojas')
+                        ->where('loja_id', $lojaId)
+                        ->where('produto_id', $ing->insumo_id)
+                        ->value('quantidade');
+
+                    if ($estoqueAtual < $qtdNecessaria) {
+                        throw new \Exception("Estoque insuficiente de {$ing->nome}. Necessário: {$qtdNecessaria}, Atual: {$estoqueAtual}");
+                    }
+                }
 
                 // Decrementa do estoque da loja
                 DB::table('estoque_lojas')->updateOrInsert(

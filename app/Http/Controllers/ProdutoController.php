@@ -122,7 +122,9 @@ class ProdutoController extends Controller
             DB::beginTransaction();
 
             // 1. DADOS GLOBAIS
-            $dadosGlobal = $request->only(['nome', 'codigo_barras', 'codigo_balanca', 'categoria', 'unidade_medida', 'rendimento', 'grupo_familia', 'tipo_item']);
+            $dadosGlobal = $request->only(['nome', 'codigo_barras', 'codigo_balanca', 'categoria', 'unidade_medida', 'rendimento', 'grupo_familia', 'tipo_item', 'estoque_infinito']);
+            
+            $dadosGlobal['estoque_infinito'] = filter_var($request->estoque_infinito, FILTER_VALIDATE_BOOLEAN);
             
             if (!$request->categoria) $dadosGlobal['categoria'] = 'Outros';
             if (!$request->tipo_item) $dadosGlobal['tipo_item'] = 'REVENDA';
@@ -197,7 +199,7 @@ class ProdutoController extends Controller
     {
         $lojaId = $request->query('loja_id');
 
-        // 1. Busca Produto e Preço (Incluindo preço de venda da loja)
+        // 1. Busca Produto e Preço
         $produto = DB::table('produtos')
             ->leftJoin('estoque_lojas', function($join) use ($lojaId) {
                 $join->on('produtos.id', '=', 'estoque_lojas.produto_id')
@@ -211,7 +213,7 @@ class ProdutoController extends Controller
             )
             ->first();
 
-        // 2. Busca Ingredientes (Agora com Estoque Atual para validação de produção)
+        // 2. Busca Ingredientes (ADICIONADO 'estoque_infinito' AQUI)
         $ingredientes = DB::table('ficha_tecnica_ingredientes')
             ->join('produtos', 'ficha_tecnica_ingredientes.insumo_id', '=', 'produtos.id')
             ->leftJoin('estoque_lojas', function($join) use ($lojaId) {
@@ -223,8 +225,9 @@ class ProdutoController extends Controller
                 'produtos.id',
                 'produtos.nome',
                 'produtos.unidade_medida as unidade',
+                // CAMPO NOVO PARA FRONTEND:
+                'produtos.estoque_infinito', 
                 DB::raw('COALESCE(estoque_lojas.preco_custo, 0) as custo_unitario'),
-                // Campo crucial para a aba de Produção:
                 DB::raw('COALESCE(estoque_lojas.quantidade, 0) as estoque_atual'), 
                 'ficha_tecnica_ingredientes.qtd_usada as qtd'
             )
