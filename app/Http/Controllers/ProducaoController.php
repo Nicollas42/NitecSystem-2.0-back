@@ -9,7 +9,31 @@ use App\Models\Produto;
 class ProducaoController extends Controller
 {
     /**
-     * REGISTRAR PRODUÇÃO E MOVIMENTAR ESTOQUE
+     * HISTÓRICO: Lista as produções realizadas (CABEÇALHO)
+     */
+    public function listar_historico(Request $request)
+    {
+        $lojaId = $request->query('loja_id');
+        
+        $historico = DB::table('producoes')
+            ->join('produtos', 'producoes.produto_id', '=', 'produtos.id')
+            ->where('producoes.loja_id', $lojaId)
+            ->select(
+                'producoes.id',
+                'producoes.created_at',
+                'producoes.quantidade_produzida as quantidade', // Alias para o front
+                'produtos.nome as produto_nome',
+                'produtos.unidade_medida'
+            )
+            ->orderBy('producoes.created_at', 'desc')
+            ->limit(50) // Limita para não pesar
+            ->get();
+
+        return response()->json($historico);
+    }
+
+    /**
+     * REGISTRAR PRODUÇÃO E MOVIMENTAR ESTOQUE COMPLETO
      */
     public function registrar(Request $request)
     {
@@ -26,75 +50,85 @@ class ProducaoController extends Controller
         try {
             DB::beginTransaction();
 
-            // 1. Busca dados do Produto Principal e seu Rendimento Base
+            // 1. Busca dados do Produto Principal
             $produto = DB::table('produtos')->where('id', $prodId)->first();
             $rendimentoBase = (float) $produto->rendimento;
 
             if ($rendimentoBase <= 0) {
-                throw new \Exception("O rendimento base deste produto é inválido (Zero). Revise a Ficha Técnica.");
+                throw new \Exception("O rendimento base é inválido (Zero). Revise a Ficha Técnica.");
             }
 
-            // 2. Calcula o Fator de Proporção (Ex: Quero 100kg, Base é 50kg -> Fator = 2)
+            // 2. Calcula Fator
             $fator = $qtdProduzir / $rendimentoBase;
 
-            // 3. Busca os Ingredientes da Ficha Técnica
+            // 3. Busca Ingredientes
             $ingredientes = DB::table('ficha_tecnica_ingredientes')
                 ->where('produto_id', $prodId)
                 ->get();
 
             if ($ingredientes->isEmpty()) {
-                throw new \Exception("Este produto não possui ingredientes cadastrados na Ficha Técnica.");
+                throw new \Exception("Este produto não possui ingredientes na Ficha Técnica.");
             }
 
-            // 4. DEBITAR INGREDIENTES (Baixa de Estoque)
+            // ---------------------------------------------------------
+            // 4. REGISTRO DO LOTE (TABELA PRODUCOES)
+            // ---------------------------------------------------------
+            // Buscamos o custo atual para salvar o histórico financeiro
+            $dadosEstoqueFinal = DB::table('estoque_lojas')
+                ->where('loja_id', $lojaId)->where('produto_id', $prodId)->first();
+            $custoMomentaneo = $dadosEstoqueFinal ? $dadosEstoqueFinal->preco_custo : 0;
+
+            $producaoId = DB::table('producoes')->insertGetId([
+                'loja_id' => $lojaId,
+                'produto_id' => $prodId,
+                'quantidade_produzida' => $qtdProduzir,
+                'custo_unitario_momento' => $custoMomentaneo,
+                'created_at' => now()
+            ]);
+
+            // ---------------------------------------------------------
+            // 5. BAIXA DOS INSUMOS (SAÍDA DE ESTOQUE)
+            // ---------------------------------------------------------
             foreach ($ingredientes as $ing) {
-                // Se for item de Estoque Infinito (Água, Energia), PULA a baixa ou apenas registra negativo sem travar
-                // Mas a lógica principal é: NÃO TRAVAR
-                
-                // Busca se é infinito
-                $produtoInfo = DB::table('produtos')->where('id', $ing->insumo_id)->first();
-                
+                $produtoIngrediente = DB::table('produtos')->where('id', $ing->insumo_id)->first();
                 $qtdNecessaria = $ing->qtd_usada * $fator;
 
-                // LÓGICA DA OPÇÃO B:
-                if ($produtoInfo->estoque_infinito) {
-                    // Se é infinito, a gente até pode debitar (vai ficar negativo, tipo -1000 Litros), 
-                    // mas NÃO VAMOS BLOQUEAR se faltar.
-                    // Ou melhor: nem fazemos a validação de saldo insuficiente.
-                } else {
-                    // LÓGICA PADRÃO (Trava se faltar)
+                // Verifica se é Estoque Infinito (Água, Gás)
+                if (!$produtoIngrediente->estoque_infinito) {
                     $estoqueAtual = DB::table('estoque_lojas')
                         ->where('loja_id', $lojaId)
                         ->where('produto_id', $ing->insumo_id)
                         ->value('quantidade');
 
+                    // Validação de Saldo (opcional, pode deixar ficar negativo se preferir)
                     if ($estoqueAtual < $qtdNecessaria) {
-                        throw new \Exception("Estoque insuficiente de {$ing->nome}. Necessário: {$qtdNecessaria}, Atual: {$estoqueAtual}");
+                        throw new \Exception("Estoque insuficiente de {$produtoIngrediente->nome}. Necessário: " . number_format($qtdNecessaria, 3));
                     }
+
+                    // DEBITA DO ESTOQUE
+                    DB::table('estoque_lojas')
+                        ->where('loja_id', $lojaId)
+                        ->where('produto_id', $ing->insumo_id)
+                        ->decrement('quantidade', $qtdNecessaria);
                 }
 
-                // Decrementa do estoque da loja
-                DB::table('estoque_lojas')->updateOrInsert(
-                    ['loja_id' => $lojaId, 'produto_id' => $ing->insumo_id],
-                    ['updated_at' => now()]
-                ); // Garante que a linha existe antes de decrementar (embora insumo deva existir)
-
-                DB::table('estoque_lojas')
-                    ->where('loja_id', $lojaId)
-                    ->where('produto_id', $ing->insumo_id)
-                    ->decrement('quantidade', $qtdNecessaria);
+                // REGISTRA NO HISTÓRICO DE MOVIMENTAÇÃO (SAÍDA)
+                // Isso vai fazer aparecer na aba "Movimentação Geral"
+                DB::table('historico_movimentacoes')->insert([
+                    'loja_id' => $lojaId,
+                    'produto_id' => $ing->insumo_id,
+                    'tipo_operacao' => 'SAIDA', // Ou CONSUMO
+                    'origem' => 'DEPOSITO',
+                    'destino' => 'PRODUCAO',
+                    'quantidade' => $qtdNecessaria,
+                    'motivo' => "Insumo p/ Produção #{$producaoId} ({$produto->nome})",
+                    'created_at' => now()
+                ]);
             }
 
-            // 5. CREDITAR PRODUTO ACABADO (Entrada de Estoque)
-            // Primeiro busca o custo atual para salvar no histórico
-            $dadosEstoque = DB::table('estoque_lojas')
-                ->where('loja_id', $lojaId)
-                ->where('produto_id', $prodId)
-                ->first();
-            
-            $custoAtual = $dadosEstoque ? $dadosEstoque->preco_custo : 0;
-
-            // Incrementa o estoque do produto final
+            // ---------------------------------------------------------
+            // 6. ENTRADA DO PRODUTO ACABADO (ENTRADA DE ESTOQUE)
+            // ---------------------------------------------------------
             DB::table('estoque_lojas')->updateOrInsert(
                 ['loja_id' => $lojaId, 'produto_id' => $prodId],
                 ['updated_at' => now()]
@@ -105,17 +139,20 @@ class ProducaoController extends Controller
                 ->where('produto_id', $prodId)
                 ->increment('quantidade', $qtdProduzir);
 
-            // 6. Registrar no Histórico
-            DB::table('producoes')->insert([
+            // REGISTRA NO HISTÓRICO DE MOVIMENTAÇÃO (ENTRADA)
+            DB::table('historico_movimentacoes')->insert([
                 'loja_id' => $lojaId,
                 'produto_id' => $prodId,
-                'quantidade_produzida' => $qtdProduzir,
-                'custo_unitario_momento' => $custoAtual,
+                'tipo_operacao' => 'ENTRADA',
+                'origem' => 'PRODUCAO',
+                'destino' => 'DEPOSITO',
+                'quantidade' => $qtdProduzir,
+                'motivo' => "Produção Finalizada (Lote #{$producaoId})",
                 'created_at' => now()
             ]);
 
             DB::commit();
-            return response()->json(['status' => 'sucesso', 'mensagem' => 'Produção registrada! Estoque atualizado.']);
+            return response()->json(['status' => 'sucesso', 'mensagem' => 'Produção registrada com sucesso!']);
 
         } catch (\Exception $e) {
             DB::rollBack();

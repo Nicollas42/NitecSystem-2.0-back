@@ -8,6 +8,8 @@ use App\Http\Controllers\ProdutoController;
 use App\Http\Controllers\EquipamentoController;
 use App\Http\Controllers\LojaController;
 use App\Http\Controllers\ProducaoController;
+use App\Http\Controllers\MovimentacaoController;
+use App\Http\Controllers\FornecedorController;
 /*
 |--------------------------------------------------------------------------
 | ROTAS PÚBLICAS (Não precisa de token/login)
@@ -49,4 +51,14 @@ Route::get('/estoque-geral', [ProdutoController::class, 'listar_estoque_geral'])
 Route::get('/produtos/{id}/ficha', [ProdutoController::class, 'obter_detalhes_ficha']);
 Route::put('/produtos/{id}/ficha', [ProdutoController::class, 'salvar_ficha_completa']);
 Route::post('/producao', [ProducaoController::class, 'registrar']);
+Route::post('/movimentacao/registrar', [MovimentacaoController::class, 'registrar']);
+Route::get('/movimentacao/historico', [MovimentacaoController::class, 'listar_historico']);
+Route::get('/producao/historico', [ProducaoController::class, 'listar_historico']);
+Route::post('/producao/registrar', [ProducaoController::class, 'registrar']);
+
+Route::get('/fornecedores', [FornecedorController::class, 'index']);
+Route::post('/fornecedores', [FornecedorController::class, 'store']);
+Route::put('/fornecedores/{id}', [FornecedorController::class, 'update']);
+Route::get('/produtos/{id}/historico-compras', [FornecedorController::class, 'historico_compras_produto']);
+
 });
