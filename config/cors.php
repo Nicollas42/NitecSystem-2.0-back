@@ -8,12 +8,15 @@ return [
     |--------------------------------------------------------------------------
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    // 1. Adicionamos 'login', 'logout' e '*' para garantir que todas as rotas passem pelo CORS
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'logout', '*'],
 
     'allowed_methods' => ['*'],
 
-    // PERMITE QUE O VUE ACESSE O LARAVEL
-    'allowed_origins' => ['*'], 
+    // 2. AQUI ESTÁ O SEGREDO: Troque o '*' pelo link EXATO da Vercel (sem a barra no final)
+    'allowed_origins' => [
+        'https://nitec-system-2-0-front.vercel.app'
+    ],
 
     'allowed_origins_patterns' => [],
 
@@ -23,7 +26,6 @@ return [
 
     'max_age' => 0,
 
-    // IMPORTANTE: Permite envio de cookies/auth headers
     'supports_credentials' => true,
 
 ];
