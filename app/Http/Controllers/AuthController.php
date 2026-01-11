@@ -135,6 +135,6 @@ class AuthController extends Controller
             return response()->json(['status' => 'sucesso']);
         }
 
-        return response()->json(['message' => 'Senha incorreta.'], 401);
+        return response()->json(['message' => 'Senha incorreta.'], 403);
     }
 }
