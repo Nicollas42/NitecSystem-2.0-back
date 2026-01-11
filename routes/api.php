@@ -62,3 +62,19 @@ Route::put('/fornecedores/{id}', [FornecedorController::class, 'update']);
 Route::get('/produtos/{id}/historico-compras', [FornecedorController::class, 'historico_compras_produto']);
 
 });
+
+// Rota de Health Check (Monitoramento)
+Route::get('/status', function () {
+    try {
+        // Tenta fazer uma consulta simples no banco
+        DB::connection()->getPdo();
+        $dbStatus = true;
+    } catch (\Exception $e) {
+        $dbStatus = false;
+    }
+
+    return response()->json([
+        'api' => true,      // Se respondeu, a API está ON
+        'database' => $dbStatus // Retorna se o banco conectou ou não
+    ]);
+});
