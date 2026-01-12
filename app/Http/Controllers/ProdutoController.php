@@ -12,21 +12,22 @@ class ProdutoController extends Controller
 {
     /**
      * ABA "ESTOQUE ATUAL": 
-     * Lista TODOS os produtos da empresa para Depósito e Vitrine Local.
+     * Lista todos os produtos da empresa e anexa os lotes detalhados de cada um.
      */
     public function listar_produtos(Request $request)
     {
         $user = Auth::user();
-        $lojaId = $request->query('loja_id');
+        $loja_id = $request->query('loja_id');
 
-        if (!$lojaId) return response()->json([]);
+        if (!$loja_id) {
+            return response()->json([]);
+        }
 
         $produtos = DB::table('produtos')
-            ->leftJoin('estoque_lojas', function($join) use ($lojaId) {
+            ->leftJoin('estoque_lojas', function($join) use ($loja_id) {
                 $join->on('produtos.id', '=', 'estoque_lojas.produto_id')
-                     ->where('estoque_lojas.loja_id', '=', $lojaId);
+                     ->where('estoque_lojas.loja_id', '=', $loja_id);
             })
-            // --- NOVA JUNÇÃO: Traz dados do Fornecedor ---
             ->leftJoin('fornecedores', 'produtos.fornecedor_id', '=', 'fornecedores.id')
             ->where('produtos.empresa_id', $user->empresa_id)
             ->select(
@@ -42,12 +43,10 @@ class ProdutoController extends Controller
                 'produtos.fornecedor_id',
                 'produtos.grupo_familia',
                 
-                // --- NOVOS CAMPOS SELECIONADOS ---
                 'fornecedores.nome_fantasia as fornecedor_nome',
                 'fornecedores.vendedor_nome',
 
                 DB::raw('CASE WHEN estoque_lojas.id IS NOT NULL THEN 1 ELSE 0 END as tem_cadastro'),
-
                 DB::raw('COALESCE(estoque_lojas.preco_custo, produtos.preco_custo, 0) as preco_custo'),
                 DB::raw('COALESCE(estoque_lojas.preco_venda, produtos.preco_venda, 0) as preco_venda'),
                 
@@ -63,7 +62,28 @@ class ProdutoController extends Controller
             ->orderBy('produtos.nome', 'asc')
             ->get();
 
-        return response()->json($produtos);
+        // MAPEIA OS PRODUTOS PARA ADICIONAR OS SUB-LOTES PARA A VISUALIZAÇÃO EXPANSÍVEL
+        $produtos_com_lotes = $produtos->map(function ($produto) use ($loja_id) {
+            $produto->lotes = DB::table('estoque_lotes')
+                ->leftJoin('fornecedores', 'estoque_lotes.fornecedor_id', '=', 'fornecedores.id')
+                ->where('estoque_lotes.produto_id', $produto->id)
+                ->where('estoque_lotes.loja_id', $loja_id)
+                ->where('estoque_lotes.quantidade_atual', '>', 0) // Apenas lotes com saldo positivo
+                ->select(
+                    'estoque_lotes.id',
+                    'estoque_lotes.quantidade_atual',
+                    'estoque_lotes.preco_custo',
+                    'estoque_lotes.validade',
+                    'estoque_lotes.created_at as data_entrada',
+                    'fornecedores.nome_fantasia as fornecedor_nome'
+                )
+                ->orderBy('estoque_lotes.validade', 'asc')
+                ->get();
+
+            return $produto;
+        });
+
+        return response()->json($produtos_com_lotes);
     }
 
     /**
@@ -77,7 +97,6 @@ class ProdutoController extends Controller
         $geral = DB::table('estoque_lojas')
             ->join('produtos', 'estoque_lojas.produto_id', '=', 'produtos.id')
             ->join('lojas', 'estoque_lojas.loja_id', '=', 'lojas.id')
-            // --- NOVA JUNÇÃO ---
             ->leftJoin('fornecedores', 'produtos.fornecedor_id', '=', 'fornecedores.id')
             ->where('produtos.empresa_id', $user->empresa_id)
             ->select(
@@ -88,11 +107,8 @@ class ProdutoController extends Controller
                 'produtos.codigo_barras',
                 'produtos.codigo_balanca',
                 'produtos.unidade_medida', 
-                
-                // --- NOVOS CAMPOS SELECIONADOS ---
                 'fornecedores.nome_fantasia as fornecedor_nome',
                 'fornecedores.vendedor_nome',
-
                 'lojas.nome_fantasia as filial_nome',
                 'lojas.eh_matriz',
                 'estoque_lojas.preco_venda',
@@ -111,9 +127,9 @@ class ProdutoController extends Controller
     public function criar_produto(Request $request) { return $this->salvar_produto($request, null); }
     public function atualizar_produto(Request $request, $id) { return $this->salvar_produto($request, $id); }
 
-    // =========================================
-    // TRATAMENTO DE UPLOAD DE IMAGEM
-    // =========================================
+    /**
+     * TRATAMENTO DE UPLOAD DE IMAGEM
+     */
     private function handleImageUpload(Request $request, $produtoId = null)
     {
         if (!$request->hasFile('imagem_arquivo')) {
@@ -142,7 +158,9 @@ class ProdutoController extends Controller
     }
 
     /**
-     * Lógica Unificada de Salvamento
+     * Lógica Unificada de Salvamento (Editada para Gestão Automática de Lotes)
+     * @param Request $request
+     * @param int|null $id
      */
     private function salvar_produto($request, $id = null)
     {
@@ -171,7 +189,6 @@ class ProdutoController extends Controller
                 $dadosGlobal['rendimento'] = 1;
             }
 
-            // --- PROCESSA A IMAGEM ---
             $novoPath = $this->handleImageUpload($request, $id);
             if ($novoPath) {
                 $dadosGlobal['imagem_path'] = $novoPath;
@@ -194,6 +211,12 @@ class ProdutoController extends Controller
 
             // 2. DADOS LOCAIS (ESTOQUE LOJA)
             if ($lojaId) {
+                // Busca quantidade anterior para calcular a diferença e gerar lote de ajuste
+                $qtdAnterior = DB::table('estoque_lojas')
+                    ->where('loja_id', $lojaId)
+                    ->where('produto_id', $produtoId)
+                    ->value('quantidade') ?? 0;
+
                 $dadosLocal = ['updated_at' => now()];
 
                 if ($request->has('preco_venda')) $dadosLocal['preco_venda'] = (float)$request->preco_venda;
@@ -215,10 +238,36 @@ class ProdutoController extends Controller
                     ['loja_id' => $lojaId, 'produto_id' => $produtoId],
                     $dadosLocal
                 );
+
+                // --- GESTÃO AUTOMÁTICA DE LOTES (AJUSTE MANUAL/INICIAL) ---
+                if ($request->has('estoque_deposito')) {
+                    $novaQtd = (float)$request->estoque_deposito;
+
+                    if ($novaQtd > $qtdAnterior) {
+                        // Se houve aumento manual de estoque, cria um lote de ajuste para a diferença positiva
+                        $diferenca = $novaQtd - $qtdAnterior;
+                        DB::table('estoque_lotes')->insert([
+                            'loja_id' => $lojaId,
+                            'produto_id' => $produtoId,
+                            'fornecedor_id' => $request->fornecedor_id ?? null,
+                            'quantidade_inicial' => $diferenca,
+                            'quantidade_atual' => $diferenca,
+                            'preco_custo' => (float)($request->preco_custo ?? 0),
+                            'validade' => $request->validade,
+                            'numero_lote' => 'AJUSTE-MANUAL-' . date('Ymd-His'),
+                            'created_at' => now(),
+                            'updated_at' => now()
+                        ]);
+                    } elseif ($novaQtd < $qtdAnterior) {
+                        // Se houve redução manual (ajuste negativo), consome dos lotes existentes (menor quantidade primeiro)
+                        $reducao = $qtdAnterior - $novaQtd;
+                        $this->baixar_lotes_ajuste($lojaId, $produtoId, $reducao);
+                    }
+                }
             }
 
             DB::commit();
-            return response()->json(['status' => 'sucesso', 'mensagem' => 'Produto salvo com sucesso!']);
+            return response()->json(['status' => 'sucesso', 'mensagem' => 'Produto e estoque atualizados com sucesso!']);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -226,6 +275,30 @@ class ProdutoController extends Controller
                 return response()->json(['status' => 'erro', 'mensagem' => 'ID ou Código de Barras já existente.'], 400);
             }
             return response()->json(['status' => 'erro', 'mensagem' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Consome os lotes para manter o estoque sincronizado após redução manual.
+     * @param int $lojaId
+     * @param int $produtoId
+     * @param float $quantidade
+     */
+    private function baixar_lotes_ajuste($lojaId, $produtoId, $quantidade)
+    {
+        $lotes = DB::table('estoque_lotes')
+            ->where('loja_id', $lojaId)
+            ->where('produto_id', $produtoId)
+            ->where('quantidade_atual', '>', 0)
+            ->orderBy('quantidade_atual', 'asc') // Sua regra de negócio: consome o menor lote primeiro
+            ->get();
+
+        $restante = $quantidade;
+        foreach ($lotes as $lote) {
+            if ($restante <= 0) break;
+            $baixa = min($lote->quantidade_atual, $restante);
+            DB::table('estoque_lotes')->where('id', $lote->id)->decrement('quantidade_atual', $baixa);
+            $restante -= $baixa;
         }
     }
 
