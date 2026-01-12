@@ -13,6 +13,11 @@ class User extends Authenticatable
 
     protected $table = 'usuarios';
 
+    public function notas_fiscais()
+    {
+        return $this->hasMany(NotaFiscal::class, 'user_id');
+    }
+
     protected $fillable = [
         'empresa_id', // <--- CAMPO NOVO IMPORTANTÍSSIMO
         'nome_completo',
@@ -34,4 +39,6 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    
 }

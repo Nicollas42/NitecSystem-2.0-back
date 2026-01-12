@@ -10,6 +10,7 @@ use App\Http\Controllers\LojaController;
 use App\Http\Controllers\ProducaoController;
 use App\Http\Controllers\MovimentacaoController;
 use App\Http\Controllers\FornecedorController;
+use App\Http\Controllers\NotaFiscalController;
 /*
 |--------------------------------------------------------------------------
 | ROTAS PÚBLICAS (Não precisa de token/login)
@@ -60,7 +61,10 @@ Route::get('/fornecedores', [FornecedorController::class, 'index']);
 Route::post('/fornecedores', [FornecedorController::class, 'store']);
 Route::put('/fornecedores/{id}', [FornecedorController::class, 'update']);
 Route::get('/produtos/{id}/historico-compras', [FornecedorController::class, 'historico_compras_produto']);
-
+Route::post('/notas/upload', [NotaFiscalController::class, 'uploadXml']);
+Route::get('/movimentacao/lotes-produto', [MovimentacaoController::class, 'listar_lotes_produto']);
+Route::post('/notas/confirmar', [NotaFiscalController::class, 'confirmar_importacao']);
+Route::get('/lojas', [LojaController::class, 'index']);
 });
 
 // Rota de Health Check (Monitoramento)

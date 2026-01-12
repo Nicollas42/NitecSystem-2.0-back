@@ -100,24 +100,26 @@ class ProducaoController extends Controller
                         ->where('produto_id', $ing->insumo_id)
                         ->value('quantidade');
 
-                    // Validação de Saldo (opcional, pode deixar ficar negativo se preferir)
+                    // Validação de Saldo
                     if ($estoqueAtual < $qtdNecessaria) {
                         throw new \Exception("Estoque insuficiente de {$produtoIngrediente->nome}. Necessário: " . number_format($qtdNecessaria, 3));
                     }
 
-                    // DEBITA DO ESTOQUE
+                    // A) DEBITA DO ESTOQUE GERAL
                     DB::table('estoque_lojas')
                         ->where('loja_id', $lojaId)
                         ->where('produto_id', $ing->insumo_id)
                         ->decrement('quantidade', $qtdNecessaria);
+
+                    // B) NOVO: DEBITA DOS LOTES ESPECÍFICOS (MENOR QUANTIDADE PRIMEIRO)
+                    $this->consumir_lotes_insumo($lojaId, $ing->insumo_id, $qtdNecessaria);
                 }
 
                 // REGISTRA NO HISTÓRICO DE MOVIMENTAÇÃO (SAÍDA)
-                // Isso vai fazer aparecer na aba "Movimentação Geral"
                 DB::table('historico_movimentacoes')->insert([
                     'loja_id' => $lojaId,
                     'produto_id' => $ing->insumo_id,
-                    'tipo_operacao' => 'SAIDA', // Ou CONSUMO
+                    'tipo_operacao' => 'SAIDA',
                     'origem' => 'DEPOSITO',
                     'destino' => 'PRODUCAO',
                     'quantidade' => $qtdNecessaria,
@@ -129,15 +131,31 @@ class ProducaoController extends Controller
             // ---------------------------------------------------------
             // 6. ENTRADA DO PRODUTO ACABADO (ENTRADA DE ESTOQUE)
             // ---------------------------------------------------------
+            // Garante que o registro de estoque existe na loja
             DB::table('estoque_lojas')->updateOrInsert(
                 ['loja_id' => $lojaId, 'produto_id' => $prodId],
                 ['updated_at' => now()]
             );
             
+            // Incrementa o saldo geral
             DB::table('estoque_lojas')
                 ->where('loja_id', $lojaId)
                 ->where('produto_id', $prodId)
                 ->increment('quantidade', $qtdProduzir);
+
+            // NOVO: REGISTRA O LOTE DA PRODUÇÃO FINALIZADA
+            DB::table('estoque_lotes')->insert([
+                'loja_id'            => $lojaId,
+                'produto_id'         => $prodId,
+                'fornecedor_id'      => $produto->fornecedor_id ?? null,
+                'nota_fiscal_id'     => null,
+                'quantidade_inicial' => $qtdProduzir,
+                'quantidade_atual'   => $qtdProduzir,
+                'preco_custo'        => $custoMomentaneo,
+                'numero_lote'        => 'PROD-' . $producaoId,
+                'created_at'         => now(),
+                'updated_at'         => now()
+            ]);
 
             // REGISTRA NO HISTÓRICO DE MOVIMENTAÇÃO (ENTRADA)
             DB::table('historico_movimentacoes')->insert([
@@ -157,6 +175,37 @@ class ProducaoController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['status' => 'erro', 'mensagem' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Consome os lotes do insumo priorizando os que possuem menor quantidade atual.
+     * @param int $loja_id
+     * @param int $produto_id
+     * @param float $quantidade_necessaria
+     */
+    private function consumir_lotes_insumo($loja_id, $produto_id, $quantidade_necessaria)
+    {
+        // Busca lotes com saldo positivo, ordenando pela MENOR quantidade
+        $lotes = DB::table('estoque_lotes')
+            ->where('loja_id', $loja_id)
+            ->where('produto_id', $produto_id)
+            ->where('quantidade_atual', '>', 0)
+            ->orderBy('quantidade_atual', 'asc')
+            ->get();
+
+        $restante = $quantidade_necessaria;
+
+        foreach ($lotes as $lote) {
+            if ($restante <= 0) break;
+
+            $valor_baixa = min($lote->quantidade_atual, $restante);
+
+            DB::table('estoque_lotes')
+                ->where('id', $lote->id)
+                ->decrement('quantidade_atual', $valor_baixa);
+
+            $restante -= $valor_baixa;
         }
     }
 }
